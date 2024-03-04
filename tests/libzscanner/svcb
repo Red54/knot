@@ -1,0 +1,17 @@
+$ORIGIN	.
+$TTL	1
+
+example.com.       SOA     dns1.example.com. hostmaster.example.com. (
+                2010111213      ; serial
+                6h              ; refresh
+                1h              ; retry
+                1w              ; expire
+                1d ) 
+
+;example.com.	SVCB	1 foo.example.com. key667="hello\210qoo"
+;example.com.	SVCB	16 foo.example.org. alpn="f\\\\oo\\,bar,h2"
+;example.com.	SVCB	16 foo.example.org. alpn=f\\\092oo\092,bar,h2
+example.com. SVCB 1 . alpn=foo\\\092,bar
+;foo. SVCB 1 . alpn="foo\\092,bar"
+
+foo. NS \.
