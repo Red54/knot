@@ -167,6 +167,7 @@ class Server(object):
         self.quic_port = None
         self.tls_port = None
         self.cert_key = str()
+        self.cert_key_file = None
         self.udp_workers = None
         self.tcp_workers = None
         self.bg_workers = None
@@ -1034,6 +1035,19 @@ class Bind(Server):
 
     def get_config(self):
         s = dnstest.config.BindConf()
+        
+        masters_and_slaves = set([self])
+        for zone in sorted(self.zones):
+            z = self.zones[zone]
+            masters_and_slaves.update(z.masters)
+            masters_and_slaves.update(z.slaves)
+        for x in masters_and_slaves:
+            if x.tls_port and x.cert_key_file:
+                s.begin("tls %s" % x.name)
+                s.item_str("key-file", "%s.key" % x.cert_key_file)
+                s.item_str("cert-file", "%s.crt" % x.cert_key_file)
+                s.end()
+        
         s.begin("options")
         self._str(s, "server-id", self.ident)
         self._str(s, "version", self.version)
@@ -1048,6 +1062,13 @@ class Bind(Server):
         else:
             s.item("listen-on", "{ }")
             s.item("listen-on-v6 port", "%i { %s; }" % (self.port, self.addr))
+        if self.tls_port:
+            if ipaddress.ip_address(self.addr).version == 4:
+                s.item("listen-on port", "%i tls %s { %s; }" % (self.tls_port, self.name if self.cert_key_file else "ephemeral", self.addr))
+                s.item("listen-on-v6", "{ }")
+            else:
+                s.item("listen-on", "{ }")
+                s.item("listen-on-v6 port", "%i tls %s { %s; }" % (self.tls_port, self.name if self.cert_key_file else "ephemeral", self.addr))
         s.item("auth-nxdomain", "no")
         s.item("recursion", "no")
         s.item("masterfile-format", "text")
@@ -1130,15 +1151,18 @@ class Bind(Server):
                 masters_notify = ""
                 for master in z.masters:
                     if self.tsig:
-                        masters += "%s port %i key %s; " \
-                                   % (master.addr, master.port, self.tsig.name)
+                        masters += "%s port %i key %s" \
+                                   % (master.addr, master.tls_port or master.port, self.tsig.name)
                         if not master.disable_notify:
                             masters_notify += "key %s; " % master.tsig.name
                     else:
-                        masters += "%s port %i; " \
-                                   % (master.addr, master.port)
+                        masters += "%s port %i" \
+                                   % (master.addr, master.tls_port or master.port)
                         if not master.disable_notify:
                             masters_notify += "%s; " % master.addr
+                    if master.tls_port:
+                        masters += " tls %s" % (master.name if master.cert_key_file else "ephemeral")
+                    masters += "; "
                 s.item("masters", "{ %s}" % masters)
                 if masters_notify:
                     s.item("allow-notify", "{ %s}" % masters_notify)
@@ -1156,10 +1180,13 @@ class Bind(Server):
                     if self.disable_notify:
                         continue
                     if self.tsig:
-                        slaves += "%s port %i key %s; " \
-                                  % (slave.addr, slave.port, self.tsig.name)
+                        slaves += "%s port %s key %s" \
+                                  % (slave.addr, slave.tls_port or slave.port, self.tsig.name)
                     else:
-                        slaves += "%s port %i; " % (slave.addr, slave.port)
+                        slaves += "%s port %s" % (slave.addr, slave.tls_port or slave.port)
+                    if slave.tls_port:
+                        slaves += " tls %s" % (slave.name if slave.cert_key_file else "ephemeral")
+                    slaves += "; "
                 if slaves:
                     s.item("also-notify", "{ %s}" % slaves)
 
@@ -1405,6 +1432,9 @@ class Knot(Server):
         self._str(s, "remote-pool-limit", str(random.randint(0,6)))
         self._str(s, "remote-retry-delay", str(random.choice([0, 1, 5])))
         self._bool(s, "automatic-acl", self.auto_acl)
+        if self.cert_key_file:
+            s.item_str("key-file", "%s.key" % self.cert_key_file)
+            s.item_str("cert-file", "%s.crt" % self.cert_key_file)
         s.end()
 
         if self.xdp_port is not None and self.xdp_port > 0:
