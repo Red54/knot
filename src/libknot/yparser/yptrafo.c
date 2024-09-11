@@ -31,20 +31,6 @@
 #include "contrib/sockaddr.h"
 #include "contrib/wire_ctx.h"
 
-static const uint8_t *find_ifname_end(const uint8_t *src)
-{
-	for (;; ++src) {
-		switch (*src) {
-		case '@':
-		case '-':
-		case '/':
-		case '\0':
-			return src;
-		}
-	}
-	return NULL;
-}
-
 enum {
 	UNIT_BYTE  = 'B',
 	UNIT_KILO  = 'K',
@@ -74,37 +60,49 @@ enum {
 };
 
 enum {
-	ADDR_UNIX = 0,
-	ADDR_IP = 4, //Mask for all IP's and IPv4 value
-	ADDR_IP6 = ADDR_IP | 2,
-	ADDR_LINKLOCAL = 16,
-	ADDR_IP6_LINKLOCAL = ADDR_IP6 | ADDR_LINKLOCAL
+	ADDR_TYPE_UNIX           = 0,
+	ADDR_TYPE_IPV4           = 4,
+	ADDR_TYPE_IPV6           = 6,
+	ADDR_TYPE_IPV6_LINKLOCAL = 8 | ADDR_TYPE_IPV6,
 };
 
-static inline bool is_unix_addr(uint8_t type)
+static bool is_unix_addr(uint8_t type)
 {
-	return type == ADDR_UNIX;
+	return type == ADDR_TYPE_UNIX;
 }
 
-static inline bool is_ip_addr(uint8_t type)
+static bool is_ip4_addr(uint8_t type)
 {
-	return (type & ADDR_IP);
+	return type == ADDR_TYPE_IPV4;
 }
 
-
-static inline bool is_ip4_addr(uint8_t type)
+static bool is_ip6_addr(uint8_t type)
 {
-	return type == ADDR_IP;
-}
-
-static inline bool is_ip6_addr(uint8_t type)
-{
-	return (type & ADDR_IP6) == ADDR_IP6;
+	return (type & ADDR_TYPE_IPV6) == ADDR_TYPE_IPV6;
 }
 
 static inline bool is_ip6_linklocal_addr(uint8_t type)
 {
-	return type == ADDR_IP6_LINKLOCAL;
+	return type == ADDR_TYPE_IPV6_LINKLOCAL;
+}
+
+static bool is_ip_addr(uint8_t type)
+{
+	return is_ip4_addr(type) || is_ip6_addr(type) || is_ip6_linklocal_addr(type);
+}
+
+static const uint8_t *find_ifname_end(const uint8_t *src)
+{
+	for (;; ++src) {
+		switch (*src) {
+		case '@':
+		case '-':
+		case '/':
+		case '\0':
+			return src;
+		}
+	}
+	return NULL;
 }
 
 static wire_ctx_t copy_in(
@@ -1164,7 +1162,7 @@ struct sockaddr_storage yp_addr_noport(
 			s->sin6_scope_id = if_nametoindex((const char *)data + sizeof(((struct in6_addr *)NULL)->s6_addr));
 			if (s->sin6_scope_id == 0 && errno) {
 				ss.ss_family = AF_UNSPEC;
-			} 
+			}
 		}
 		break;
 	}
